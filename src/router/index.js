@@ -3,6 +3,7 @@ import Login from '../views/Login.vue'
 import Menu from '../views/Menu.vue'
 import WordPractice from '../views/WordPractice.vue'
 import ArticlePractice from '../views/ArticlePractice.vue'
+import AdminDashboard from '../views/AdminDashboard.vue'
 
 const routes = [
   {
@@ -31,6 +32,12 @@ const routes = [
     name: 'ArticlePractice',
     component: ArticlePractice,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/admin',
+    name: 'AdminDashboard',
+    component: AdminDashboard,
+    meta: { requiresAuth: true, requiresAdmin: true }
   }
 ]
 
@@ -41,10 +48,17 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
+  const isAdmin = localStorage.getItem('is_admin') === 'true'
   
   if (to.matched.some(record => record.meta.requiresAuth)) {
     if (!token) {
       next('/login')
+    } else if (to.matched.some(record => record.meta.requiresAdmin)) {
+      if (!isAdmin) {
+        next('/menu') // 非管理员重定向到菜单
+      } else {
+        next()
+      }
     } else {
       next()
     }

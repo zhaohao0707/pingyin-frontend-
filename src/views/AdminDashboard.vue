@@ -1,11 +1,11 @@
 <template>
-  <div class="menu-container">
+  <div class="admin-container">
     <div class="header">
-      <h1>拼音学习系统</h1>
+      <h1>管理员后台</h1>
       <div class="user-info">
-        <span>欢迎，{{ username }}</span>
-        <el-button v-if="isAdmin" @click="goToAdmin" type="warning" plain>
-          管理后台
+        <span>管理员：{{ username }}</span>
+        <el-button @click="goBack" type="primary" plain>
+          返回主菜单
         </el-button>
         <el-button @click="logout" type="text" class="logout-btn">
           退出登录
@@ -13,40 +13,74 @@
       </div>
     </div>
     
-    <div class="menu-content">
+    <div class="admin-content">
       <div class="welcome-text">
-        <h2>选择学习模式</h2>
-        <p>请选择您想要练习的内容类型</p>
+        <h2>系统管理面板</h2>
+        <p>管理用户、词库和文章内容</p>
       </div>
       
-      <div class="menu-options">
-        <div class="option-card" @click="goToWordPractice">
+      <div class="admin-options">
+        <div class="option-card" @click="currentView = 'users'">
+          <div class="card-icon">
+            <el-icon size="60">
+              <User />
+            </el-icon>
+          </div>
+          <h3>用户管理</h3>
+          <p>查看和管理注册用户</p>
+          <div class="stats-info">
+            <span>{{ userCount }} 个用户</span>
+          </div>
+        </div>
+        
+        <div class="option-card" @click="currentView = 'words'">
           <div class="card-icon">
             <el-icon size="60">
               <Document />
             </el-icon>
           </div>
-          <h3>词语练习</h3>
-          <p>练习常用词语的拼音</p>
-          <div class="progress-info" v-if="wordProgress > 1">
-            <span>上次学习到第 {{ wordProgress }} 页</span>
+          <h3>词库管理</h3>
+          <p>添加、编辑和删除词语</p>
+          <div class="stats-info">
+            <span>{{ wordCount }} 个词语</span>
           </div>
         </div>
         
-        <div class="option-card" @click="goToArticlePractice">
+        <div class="option-card" @click="currentView = 'articles'">
           <div class="card-icon">
             <el-icon size="60">
               <Reading />
             </el-icon>
           </div>
-          <h3>文章练习</h3>
-          <p>练习文章段落的拼音</p>
-          <div class="progress-info" v-if="articleProgress > 1">
-            <span>上次学习到第 {{ articleProgress }} 页</span>
+          <h3>文章管理</h3>
+          <p>添加、编辑和删除文章</p>
+          <div class="stats-info">
+            <span>{{ articleCount }} 篇文章</span>
           </div>
         </div>
       </div>
     </div>
+    
+    <!-- 用户管理视图 -->
+    <UserManagement 
+      v-if="currentView === 'users'" 
+      @close="currentView = ''"
+      @user-deleted="loadStats"
+    />
+    
+    <!-- 词库管理视图 -->
+    <WordManagement 
+      v-if="currentView === 'words'" 
+      @close="currentView = ''"
+      @word-changed="loadStats"
+    />
+    
+    <!-- 文章管理视图 -->
+    <ArticleManagement 
+      v-if="currentView === 'articles'" 
+      @close="currentView = ''"
+      @article-changed="loadStats"
+    />
   </div>
 </template>
 
@@ -54,46 +88,48 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Document, Reading } from '@element-plus/icons-vue'
-import { practiceAPI } from '../utils/api'
+import { User, Document, Reading } from '@element-plus/icons-vue'
+import { adminAPI } from '../utils/api'
+import UserManagement from '../components/UserManagement.vue'
+import WordManagement from '../components/WordManagement.vue'
+import ArticleManagement from '../components/ArticleManagement.vue'
 
 export default {
-  name: 'Menu',
+  name: 'AdminDashboard',
   components: {
+    User,
     Document,
-    Reading
+    Reading,
+    UserManagement,
+    WordManagement,
+    ArticleManagement
   },
   setup() {
     const router = useRouter()
-    const username = ref(localStorage.getItem('username') || '用户')
-    const isAdmin = ref(localStorage.getItem('is_admin') === 'true')
-    const wordProgress = ref(1)
-    const articleProgress = ref(1)
+    const username = ref(localStorage.getItem('username') || '管理员')
+    const currentView = ref('')
+    const userCount = ref(0)
+    const wordCount = ref(0)
+    const articleCount = ref(0)
     
-    const loadProgress = async () => {
+    const loadStats = async () => {
       try {
-        const [wordRes, articleRes] = await Promise.all([
-          practiceAPI.getProgress('word'),
-          practiceAPI.getProgress('article')
+        const [usersRes, wordsRes, articlesRes] = await Promise.all([
+          adminAPI.getUsers(1),
+          adminAPI.getAllWords(1),
+          adminAPI.getAllArticles(1)
         ])
         
-        wordProgress.value = wordRes.data.page
-        articleProgress.value = articleRes.data.page
+        userCount.value = usersRes.data.total
+        wordCount.value = wordsRes.data.total
+        articleCount.value = articlesRes.data.total
       } catch (error) {
-        console.error('加载进度失败:', error)
+        console.error('加载统计数据失败:', error)
       }
     }
     
-    const goToWordPractice = () => {
-      router.push('/word-practice')
-    }
-    
-    const goToArticlePractice = () => {
-      router.push('/article-practice')
-    }
-    
-    const goToAdmin = () => {
-      router.push('/admin')
+    const goBack = () => {
+      router.push('/menu')
     }
     
     const logout = () => {
@@ -106,17 +142,17 @@ export default {
     }
     
     onMounted(() => {
-      loadProgress()
+      loadStats()
     })
     
     return {
       username,
-      isAdmin,
-      wordProgress,
-      articleProgress,
-      goToWordPractice,
-      goToArticlePractice,
-      goToAdmin,
+      currentView,
+      userCount,
+      wordCount,
+      articleCount,
+      loadStats,
+      goBack,
       logout
     }
   }
@@ -124,9 +160,10 @@ export default {
 </script>
 
 <style scoped>
-.menu-container {
+.admin-container {
   min-height: 100vh;
   padding: 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .header {
@@ -160,8 +197,8 @@ export default {
   padding: 0 !important;
 }
 
-.menu-content {
-  max-width: 800px;
+.admin-content {
+  max-width: 1000px;
   margin: 0 auto;
 }
 
@@ -183,7 +220,7 @@ export default {
   opacity: 0.9;
 }
 
-.menu-options {
+.admin-options {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 30px;
@@ -224,12 +261,13 @@ export default {
   margin-bottom: 15px;
 }
 
-.progress-info {
+.stats-info {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   padding: 8px 16px;
   border-radius: 20px;
   font-size: 12px;
   display: inline-block;
+  font-weight: 500;
 }
 </style>

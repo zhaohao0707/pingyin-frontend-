@@ -96,10 +96,11 @@ export default {
         loading.value = true
         const response = await authAPI.login(form.username, form.password)
         
-        const { token, user_id, username } = response.data
+        const { token, user_id, username, is_admin } = response.data
         localStorage.setItem('token', token)
         localStorage.setItem('user_id', user_id)
         localStorage.setItem('username', username)
+        localStorage.setItem('is_admin', is_admin)
         
         ElMessage.success('登录成功')
         router.push('/menu')

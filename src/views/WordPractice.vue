@@ -20,8 +20,8 @@
     <div class="practice-content" v-if="words.length > 0">
       <div class="instruction-banner">
         <el-alert
-          title="练习说明"
-          description="请在输入框中输入对应的汉字（如：看到'你好'，请输入'你好'）"
+          title="💡 学习提示"
+          description="点击词语可以查看拼音标注，在输入框中输入对应的汉字（如：看到'你好'，请输入'你好'）"
           type="info"
           :closable="false"
           show-icon
@@ -42,6 +42,12 @@
             <div class="word-text">{{ word.word }}</div>
             <div class="pinyin-text" v-show="showPinyinIndex === index">
               {{ word.pinyin }}
+            </div>
+            
+            <!-- 悬浮提示 -->
+            <div class="click-hint-overlay" v-if="showPinyinIndex !== index">
+              <el-icon class="hint-icon"><View /></el-icon>
+              <span>点击查看拼音</span>
             </div>
           </div>
           
@@ -115,7 +121,7 @@
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight, Check, Close } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Check, Close, View } from '@element-plus/icons-vue'
 import { practiceAPI } from '../utils/api'
 
 export default {
@@ -124,7 +130,8 @@ export default {
     ArrowLeft,
     ArrowRight,
     Check,
-    Close
+    Close,
+    View
   },
   setup() {
     const router = useRouter()
@@ -396,6 +403,8 @@ export default {
   padding: 15px;
   border-radius: 10px;
   transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
 }
 
 .word-display:hover {
@@ -417,6 +426,42 @@ export default {
   font-size: 18px;
   color: #667eea;
   font-weight: 500;
+}
+
+.click-hint-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(102, 126, 234, 0.9);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+  z-index: 10;
+}
+
+.word-display:hover .click-hint-overlay {
+  opacity: 1;
+}
+
+.hint-icon {
+  font-size: 14px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 
 .input-section {

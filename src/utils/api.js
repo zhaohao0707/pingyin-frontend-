@@ -52,4 +52,22 @@ export const practiceAPI = {
   getProgress: (type) => api.get(`/api/progress/${type}`)
 }
 
+export const adminAPI = {
+  // 用户管理
+  getUsers: (page = 1) => api.get(`/admin/users?page=${page}`),
+  deleteUser: (id) => api.delete(`/admin/users/${id}`),
+  
+  // 词语管理
+  getAllWords: (page = 1) => api.get(`/admin/words?page=${page}`),
+  addWord: (word, pinyin) => api.post('/admin/words', { word, pinyin }),
+  updateWord: (id, word, pinyin) => api.put(`/admin/words/${id}`, { word, pinyin }),
+  deleteWord: (id) => api.delete(`/admin/words/${id}`),
+  
+  // 文章管理
+  getAllArticles: (page = 1) => api.get(`/admin/articles?page=${page}`),
+  addArticle: (title, content, pinyin) => api.post('/admin/articles', { title, content, pinyin }),
+  updateArticle: (id, title, content, pinyin) => api.put(`/admin/articles/${id}`, { title, content, pinyin }),
+  deleteArticle: (id) => api.delete(`/admin/articles/${id}`)
+}
+
 export default api

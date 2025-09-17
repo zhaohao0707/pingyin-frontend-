@@ -27,6 +27,17 @@
           <h3 class="article-title">{{ article.title }}</h3>
           
           <div class="article-display">
+            <!-- 提示横幅 -->
+            <div class="pinyin-hint-banner" v-if="!showPinyin">
+              <el-alert
+                title="💡 学习提示"
+                description="点击下方文章内容可以查看拼音标注，帮助您更好地学习发音"
+                type="info"
+                :closable="false"
+                show-icon
+              />
+            </div>
+            
             <div 
               class="article-text"
               @click="togglePinyin"
@@ -36,19 +47,30 @@
               <div class="pinyin-text" v-show="showPinyin">
                 {{ article.pinyin }}
               </div>
+              
+              <!-- 悬浮提示 -->
+              <div class="click-hint-overlay" v-if="!showPinyin">
+                <el-icon class="hint-icon"><View /></el-icon>
+                <span>点击查看拼音</span>
+              </div>
             </div>
-            <div class="click-hint" v-if="!showPinyin">
-              点击文章查看拼音
+            
+            <!-- 隐藏拼音的提示 -->
+            <div class="hide-pinyin-hint" v-if="showPinyin">
+              <el-button @click="togglePinyin" type="info" text size="small">
+                <el-icon><Hide /></el-icon>
+                隐藏拼音
+              </el-button>
             </div>
           </div>
           
           <div class="input-section">
-            <div class="input-label">请输入文章的内容：</div>
+            <div class="input-label">请输入文章中的汉字内容（忽略标点符号）：</div>
             <el-input
               v-model="userInput"
               type="textarea"
               :rows="6"
-              placeholder="请在此输入完整的文章内容..."
+              placeholder="请在此输入文章中的汉字，标点符号可以忽略..."
               @input="checkInput"
               :class="{
                 'correct': inputState === 'correct',
@@ -68,16 +90,51 @@
                   完全正确！
                 </span>
                 <span v-else-if="inputState === 'incorrect'" class="status-text incorrect-text">
-                  请检查拼音
+                  请检查汉字输入
                 </span>
-                <span v-else-if="similarity > 0" class="status-text partial-text">
-                  相似度: {{ Math.round(similarity * 100) }}%
+                <span v-else-if="inputState === 'partial'" class="status-text partial-text">
+                  基本正确，继续加油！
                 </span>
               </div>
               
-              <div class="input-stats">
-                <span>字符数: {{ userInput.length }}</span>
-                <span>目标长度: {{ articles[0]?.content?.length || 0 }}</span>
+              <div class="input-stats" v-if="matchResult">
+                <span class="stat-correct">正确: {{ matchResult.correctCount }}字</span>
+                <span class="stat-wrong" v-if="matchResult.wrongCount > 0">错误: {{ matchResult.wrongCount }}字</span>
+                <span class="stat-missing" v-if="matchResult.missingCount > 0">遗漏: {{ matchResult.missingCount }}字</span>
+                <span class="stat-extra" v-if="matchResult.extraCount > 0">多余: {{ matchResult.extraCount }}字</span>
+                <span class="stat-accuracy">准确率: {{ Math.round(similarity * 100) }}%</span>
+              </div>
+            </div>
+            
+            <!-- 详细匹配结果 -->
+            <div class="match-details" v-if="matchResult && matchResult.matchDetails.length > 0">
+              <div class="details-title">逐字检查结果：</div>
+              <div class="character-grid">
+                <div 
+                  v-for="(detail, index) in matchResult.matchDetails" 
+                  :key="index"
+                  class="character-item"
+                  :class="`status-${detail.status}`"
+                >
+                  <div class="char-position">{{ index + 1 }}</div>
+                  <div class="char-comparison">
+                    <span class="user-char">{{ detail.userChar || '—' }}</span>
+                    <span class="vs">vs</span>
+                    <span class="correct-char">{{ detail.correctChar || '—' }}</span>
+                  </div>
+                  <div class="char-status">
+                    <el-tag 
+                      :type="detail.status === 'correct' ? 'success' : 
+                            detail.status === 'wrong' ? 'danger' : 
+                            detail.status === 'missing' ? 'warning' : 'info'"
+                      size="small"
+                    >
+                      {{ detail.status === 'correct' ? '✓' : 
+                         detail.status === 'wrong' ? '✗' : 
+                         detail.status === 'missing' ? '缺' : '多' }}
+                    </el-tag>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -133,7 +190,7 @@
 import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight, Check, Close } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Check, Close, View, Hide } from '@element-plus/icons-vue'
 import { practiceAPI } from '../utils/api'
 
 export default {
@@ -142,7 +199,9 @@ export default {
     ArrowLeft,
     ArrowRight,
     Check,
-    Close
+    Close,
+    View,
+    Hide
   },
   setup() {
     const router = useRouter()
@@ -155,6 +214,7 @@ export default {
     const correctAudio = ref(null)
     const incorrectAudio = ref(null)
     const similarity = ref(0)
+    const matchResult = ref(null)
     
     // 创建音频数据URL
     const correctSound = ref('')
@@ -259,6 +319,7 @@ export default {
         inputState.value = ''
         showPinyin.value = false
         similarity.value = 0
+        matchResult.value = null
       } catch (error) {
         console.error('加载文章失败:', error)
         ElMessage.error('加载文章失败')
@@ -281,6 +342,70 @@ export default {
       }
     }
     
+    // 提取汉字的函数
+    const extractChineseCharacters = (text) => {
+      // 匹配汉字的正则表达式
+      const chineseRegex = /[\u4e00-\u9fff]/g
+      return text.match(chineseRegex) || []
+    }
+    
+    // 计算逐字匹配结果
+    const calculateCharacterMatching = (userChars, correctChars) => {
+      const result = {
+        correctCount: 0,
+        wrongCount: 0,
+        missingCount: 0,
+        extraCount: 0,
+        matchDetails: []
+      }
+      
+      const maxLength = Math.max(userChars.length, correctChars.length)
+      
+      // 逐字对比
+      for (let i = 0; i < maxLength; i++) {
+        const userChar = userChars[i] || null
+        const correctChar = correctChars[i] || null
+        
+        if (userChar && correctChar) {
+          if (userChar === correctChar) {
+            result.correctCount++
+            result.matchDetails.push({
+              position: i,
+              userChar,
+              correctChar,
+              status: 'correct'
+            })
+          } else {
+            result.wrongCount++
+            result.matchDetails.push({
+              position: i,
+              userChar,
+              correctChar,
+              status: 'wrong'
+            })
+          }
+        } else if (correctChar && !userChar) {
+          result.missingCount++
+          result.matchDetails.push({
+            position: i,
+            userChar: null,
+            correctChar,
+            status: 'missing'
+          })
+        } else if (userChar && !correctChar) {
+          result.extraCount++
+          result.matchDetails.push({
+            position: i,
+            userChar,
+            correctChar: null,
+            status: 'extra'
+          })
+        }
+      }
+      
+      return result
+    }
+    
     const checkInput = () => {
       if (!articles.value[0]?.content) return
       
@@ -290,20 +415,35 @@ export default {
       if (userText === '') {
         inputState.value = ''
         similarity.value = 0
+        matchResult.value = null
         return
       }
       
-      // 计算相似度
-      similarity.value = calculateSimilarity(userText, correctText)
+      // 提取汉字进行逐字匹配
+      const userChineseChars = extractChineseCharacters(userText)
+      const correctChineseChars = extractChineseCharacters(correctText)
       
-      if (userText === correctText) {
+      // 计算逐字匹配结果
+      const result = calculateCharacterMatching(userChineseChars, correctChineseChars)
+      matchResult.value = result
+      
+      // 计算准确率
+      const totalChars = correctChineseChars.length
+      const accuracy = totalChars > 0 ? (result.correctCount / totalChars) : 0
+      similarity.value = accuracy
+      
+      // 判断输入状态
+      if (result.correctCount === totalChars && result.wrongCount === 0 && result.extraCount === 0) {
+        // 完全正确
         inputState.value = 'correct'
         playCorrectSound()
-      } else if (similarity.value < 0.8) {
+      } else if (accuracy >= 0.8 && result.wrongCount <= 2) {
+        // 基本正确（80%以上正确且错误不超过2个字）
+        inputState.value = 'partial'
+      } else {
+        // 需要修正
         inputState.value = 'incorrect'
         playIncorrectSound()
-      } else {
-        inputState.value = 'partial'
       }
     }
     
@@ -372,6 +512,7 @@ export default {
       correctSound,
       incorrectSound,
       similarity,
+      matchResult,
       accuracy,
       checkInput,
       togglePinyin,
@@ -451,6 +592,25 @@ export default {
   margin-bottom: 30px;
 }
 
+.pinyin-hint-banner {
+  margin-bottom: 20px;
+}
+
+.pinyin-hint-banner :deep(.el-alert) {
+  background: rgba(102, 126, 234, 0.1);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 10px;
+}
+
+.pinyin-hint-banner :deep(.el-alert__title) {
+  color: #667eea;
+  font-weight: 600;
+}
+
+.pinyin-hint-banner :deep(.el-alert__description) {
+  color: #7f8c8d;
+}
+
 .article-text {
   cursor: pointer;
   padding: 25px;
@@ -458,6 +618,7 @@ export default {
   transition: all 0.3s ease;
   border: 2px dashed #e0e0e0;
   position: relative;
+  overflow: hidden;
 }
 
 .article-text:hover {
@@ -485,6 +646,46 @@ export default {
   font-weight: 500;
   border-top: 1px solid rgba(102, 126, 234, 0.2);
   padding-top: 15px;
+}
+
+.click-hint-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(102, 126, 234, 0.9);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 25px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+}
+
+.article-text:hover .click-hint-overlay {
+  opacity: 1;
+}
+
+.hint-icon {
+  font-size: 16px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.hide-pinyin-hint {
+  text-align: center;
+  margin-top: 15px;
 }
 
 .click-hint {
@@ -549,8 +750,121 @@ export default {
 .input-stats {
   display: flex;
   gap: 15px;
-  color: #7f8c8d;
   font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.stat-correct {
+  color: #67c23a;
+  font-weight: 500;
+}
+
+.stat-wrong {
+  color: #f56c6c;
+  font-weight: 500;
+}
+
+.stat-missing {
+  color: #e6a23c;
+  font-weight: 500;
+}
+
+.stat-extra {
+  color: #909399;
+  font-weight: 500;
+}
+
+.stat-accuracy {
+  color: #409eff;
+  font-weight: 600;
+}
+
+.match-details {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  border-left: 4px solid #409eff;
+}
+
+.details-title {
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.character-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.character-item {
+  background: white;
+  border-radius: 8px;
+  padding: 8px;
+  text-align: center;
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.character-item.status-correct {
+  border-color: #67c23a;
+  background: rgba(103, 194, 58, 0.1);
+}
+
+.character-item.status-wrong {
+  border-color: #f56c6c;
+  background: rgba(245, 108, 108, 0.1);
+}
+
+.character-item.status-missing {
+  border-color: #e6a23c;
+  background: rgba(230, 162, 60, 0.1);
+}
+
+.character-item.status-extra {
+  border-color: #909399;
+  background: rgba(144, 147, 153, 0.1);
+}
+
+.char-position {
+  font-size: 10px;
+  color: #909399;
+  margin-bottom: 4px;
+}
+
+.char-comparison {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.user-char {
+  color: #2c3e50;
+  min-width: 20px;
+}
+
+.vs {
+  font-size: 10px;
+  color: #909399;
+}
+
+.correct-char {
+  color: #67c23a;
+  min-width: 20px;
+}
+
+.char-status {
+  display: flex;
+  justify-content: center;
 }
 
 :deep(.el-textarea.correct .el-textarea__inner) {
