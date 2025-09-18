@@ -8,6 +8,10 @@
             <el-icon><Plus /></el-icon>
             添加词语
           </el-button>
+          <el-button @click="showImportDialog = true" type="success">
+            <el-icon><Upload /></el-icon>
+            导入Excel
+          </el-button>
           <el-button @click="$emit('close')" type="text" size="large">
             <el-icon><Close /></el-icon>
           </el-button>
@@ -55,11 +59,19 @@
     >
       <el-form :model="wordForm" label-width="80px">
         <el-form-item label="词语" required>
-          <el-input v-model="wordForm.word" placeholder="请输入词语" />
+          <el-input v-model="wordForm.word" placeholder="请输入中文词语" />
         </el-form-item>
-        <el-form-item label="拼音" required>
+        <el-form-item v-if="editingWord" label="拼音" required>
           <el-input v-model="wordForm.pinyin" placeholder="请输入拼音" />
         </el-form-item>
+        <el-alert 
+          v-if="!editingWord"
+          title="系统会自动为词语生成拼音标注"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-top: 10px;"
+        />
       </el-form>
       
       <template #footer>
@@ -71,31 +83,102 @@
         </span>
       </template>
     </el-dialog>
+    
+    <!-- Excel导入对话框 -->
+    <el-dialog
+      v-model="showImportDialog"
+      title="导入Excel词库"
+      width="500px"
+    >
+      <div class="import-section">
+        <div class="import-tip">
+          <el-alert
+            title="导入说明"
+            type="info"
+            :closable="false"
+            show-icon
+          >
+            <template #default>
+              <ul style="margin: 0; padding-left: 20px;">
+                <li>支持 .xlsx 和 .xls 格式的Excel文件</li>
+                <li>每行一个词语，放在第一列（A列）</li>
+                <li>系统会自动生成拼音标注</li>
+                <li>重复的词语会被跳过</li>
+              </ul>
+            </template>
+          </el-alert>
+        </div>
+        
+        <el-upload
+          ref="uploadRef"
+          :auto-upload="false"
+          :limit="1"
+          :on-change="handleFileChange"
+          :on-exceed="handleExceed"
+          accept=".xlsx,.xls"
+          drag
+        >
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">
+            将Excel文件拖到此处，或<em>点击上传</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              只能上传Excel文件，且不超过10MB
+            </div>
+          </template>
+        </el-upload>
+        
+        <div v-if="selectedFile" class="selected-file">
+          <el-tag type="success">已选择文件: {{ selectedFile.name }}</el-tag>
+        </div>
+      </div>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="cancelImport">取消</el-button>
+          <el-button 
+            type="primary" 
+            @click="importWords" 
+            :loading="importing"
+            :disabled="!selectedFile"
+          >
+            开始导入
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Close, Plus } from '@element-plus/icons-vue'
+import { Close, Plus, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { adminAPI } from '../utils/api'
 
 export default {
   name: 'WordManagement',
   components: {
     Close,
-    Plus
+    Plus,
+    Upload,
+    UploadFilled
   },
   emits: ['close', 'word-changed'],
   setup(props, { emit }) {
     const words = ref([])
     const loading = ref(false)
     const saving = ref(false)
+    const importing = ref(false)
     const currentPage = ref(1)
     const pageSize = ref(50)
     const total = ref(0)
     const showAddDialog = ref(false)
+    const showImportDialog = ref(false)
     const editingWord = ref(null)
+    const selectedFile = ref(null)
+    const uploadRef = ref(null)
     
     const wordForm = reactive({
       word: '',
@@ -124,8 +207,14 @@ export default {
     }
     
     const saveWord = async () => {
-      if (!wordForm.word.trim() || !wordForm.pinyin.trim()) {
-        ElMessage.error('请填写完整信息')
+      if (!wordForm.word.trim()) {
+        ElMessage.error('请输入词语')
+        return
+      }
+      
+      // 编辑模式需要检查拼音
+      if (editingWord.value && !wordForm.pinyin.trim()) {
+        ElMessage.error('请填写拼音')
         return
       }
       
@@ -135,8 +224,9 @@ export default {
           await adminAPI.updateWord(editingWord.value.id, wordForm.word, wordForm.pinyin)
           ElMessage.success('词语更新成功')
         } else {
-          await adminAPI.addWord(wordForm.word, wordForm.pinyin)
-          ElMessage.success('词语添加成功')
+          // 添加模式只传递词语，后端自动生成拼音
+          await adminAPI.addWord(wordForm.word)
+          ElMessage.success('词语添加成功，系统已自动生成拼音')
         }
         
         showAddDialog.value = false
@@ -145,7 +235,7 @@ export default {
         emit('word-changed')
       } catch (error) {
         console.error('保存词语失败:', error)
-        ElMessage.error('保存词语失败')
+        ElMessage.error(error.response?.data?.error || '保存词语失败')
       } finally {
         saving.value = false
       }
@@ -181,6 +271,51 @@ export default {
       wordForm.pinyin = ''
     }
     
+    const handleFileChange = (file) => {
+      selectedFile.value = file
+    }
+    
+    const handleExceed = () => {
+      ElMessage.warning('只能选择一个文件！')
+    }
+    
+    const importWords = async () => {
+      if (!selectedFile.value) {
+        ElMessage.error('请先选择Excel文件')
+        return
+      }
+      
+      const formData = new FormData()
+      formData.append('file', selectedFile.value.raw)
+      
+      importing.value = true
+      try {
+        const response = await adminAPI.importWords(formData)
+        const result = response.data
+        
+        ElMessage.success(
+          `导入完成！成功导入 ${result.imported_count} 个词语，跳过重复 ${result.skipped_count} 个，错误 ${result.error_count} 个`
+        )
+        
+        showImportDialog.value = false
+        selectedFile.value = null
+        uploadRef.value?.clearFiles()
+        await loadWords()
+        emit('word-changed')
+      } catch (error) {
+        console.error('导入失败:', error)
+        ElMessage.error('导入失败，请检查文件格式')
+      } finally {
+        importing.value = false
+      }
+    }
+    
+    const cancelImport = () => {
+      showImportDialog.value = false
+      selectedFile.value = null
+      uploadRef.value?.clearFiles()
+    }
+    
     onMounted(() => {
       loadWords()
     })
@@ -189,17 +324,25 @@ export default {
       words,
       loading,
       saving,
+      importing,
       currentPage,
       pageSize,
       total,
       showAddDialog,
+      showImportDialog,
       editingWord,
+      selectedFile,
+      uploadRef,
       wordForm,
       loadWords,
       editWord,
       saveWord,
       deleteWord,
-      resetForm
+      resetForm,
+      handleFileChange,
+      handleExceed,
+      importWords,
+      cancelImport
     }
   }
 }
@@ -279,5 +422,30 @@ export default {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.import-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.import-tip {
+  margin-bottom: 10px;
+}
+
+.selected-file {
+  margin-top: 10px;
+  text-align: center;
+}
+
+:deep(.el-upload-dragger) {
+  padding: 40px;
+}
+
+:deep(.el-icon--upload) {
+  font-size: 40px;
+  color: #409eff;
+  margin-bottom: 10px;
 }
 </style>

@@ -20,8 +20,25 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120">
+            <el-table-column label="操作" width="200">
               <template #default="scope">
+                <el-button 
+                  v-if="!scope.row.is_admin"
+                  @click="promoteUser(scope.row)" 
+                  type="success" 
+                  size="small"
+                >
+                  提升管理员
+                </el-button>
+                <el-button 
+                  v-else
+                  @click="demoteUser(scope.row)" 
+                  type="warning" 
+                  size="small"
+                  :disabled="adminCount <= 1"
+                >
+                  取消管理员
+                </el-button>
                 <el-button 
                   @click="deleteUser(scope.row)" 
                   type="danger" 
@@ -69,6 +86,7 @@ export default {
     const currentPage = ref(1)
     const pageSize = ref(20)
     const total = ref(0)
+    const adminCount = ref(0)
     
     const loadUsers = async () => {
       loading.value = true
@@ -76,6 +94,8 @@ export default {
         const response = await adminAPI.getUsers(currentPage.value)
         users.value = response.data.users
         total.value = response.data.total
+        // 计算管理员数量
+        adminCount.value = users.value.filter(user => user.is_admin).length
       } catch (error) {
         console.error('加载用户失败:', error)
         ElMessage.error('加载用户失败')
@@ -108,6 +128,52 @@ export default {
       }
     }
     
+    const promoteUser = async (user) => {
+      try {
+        await ElMessageBox.confirm(
+          `确定要将用户 "${user.username}" 提升为管理员吗？`,
+          '确认提升',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        )
+        
+        await adminAPI.promoteUser(user.id)
+        ElMessage.success('用户已提升为管理员')
+        await loadUsers()
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('提升用户失败:', error)
+          ElMessage.error('提升用户失败')
+        }
+      }
+    }
+    
+    const demoteUser = async (user) => {
+      try {
+        await ElMessageBox.confirm(
+          `确定要取消用户 "${user.username}" 的管理员权限吗？`,
+          '确认取消',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }
+        )
+        
+        await adminAPI.demoteUser(user.id)
+        ElMessage.success('已取消用户管理员权限')
+        await loadUsers()
+      } catch (error) {
+        if (error !== 'cancel') {
+          console.error('取消管理员权限失败:', error)
+          ElMessage.error('取消管理员权限失败')
+        }
+      }
+    }
+    
     onMounted(() => {
       loadUsers()
     })
@@ -118,8 +184,11 @@ export default {
       currentPage,
       pageSize,
       total,
+      adminCount,
       loadUsers,
-      deleteUser
+      deleteUser,
+      promoteUser,
+      demoteUser
     }
   }
 }

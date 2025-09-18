@@ -56,12 +56,19 @@ export const adminAPI = {
   // 用户管理
   getUsers: (page = 1) => api.get(`/admin/users?page=${page}`),
   deleteUser: (id) => api.delete(`/admin/users/${id}`),
+  promoteUser: (id) => api.post(`/admin/users/${id}/promote`),
+  demoteUser: (id) => api.post(`/admin/users/${id}/demote`),
   
   // 词语管理
   getAllWords: (page = 1) => api.get(`/admin/words?page=${page}`),
-  addWord: (word, pinyin) => api.post('/admin/words', { word, pinyin }),
+  addWord: (word) => api.post('/admin/words', { word }),
   updateWord: (id, word, pinyin) => api.put(`/admin/words/${id}`, { word, pinyin }),
   deleteWord: (id) => api.delete(`/admin/words/${id}`),
+  importWords: (formData) => api.post('/admin/words/import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  }),
   
   // 文章管理
   getAllArticles: (page = 1) => api.get(`/admin/articles?page=${page}`),
